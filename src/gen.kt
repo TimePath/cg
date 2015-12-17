@@ -98,8 +98,14 @@ fun gen(domain: KClass<*>) {
     println("""
 #include <vector>
 #include <memory>
+
 template <class T>
 using container = std::vector<std::unique_ptr<T>>;
+
+template<class T, class A, class...Args>
+void push_unique(std::vector<std::unique_ptr<T>, A>& v, Args&&... args) {
+    v.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+}
 """)
 
     println("""

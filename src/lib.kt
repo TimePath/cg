@@ -17,18 +17,15 @@ template<class T> struct withself { using Self = T; };
 using string = std::string;
 """
 
-private fun KType.conv(): String = types[this]
-val KClass<*>.companionOwnerName: String
-    get() = qualifiedName!!.split(".").let { it[it.size - 2] }
+private fun KType.conv() = types[this]
+val KClass<*>.companionOwnerName: String get() = qualifiedName!!.split(".").let { it[it.size - 2] }
 
 abstract class Trait {
     open val defaults: Map<KCallable<*>, Pair<List<String>, String>>? = null
     abstract fun implement(node: KClass<*>, name: String)
 }
 
-inline fun <reified T : Trait> impl(inst: String, @Suppress("UNUSED_PARAMETER") t: T): String {
-    return "IMPL($inst, ${T::class.companionOwnerName})"
-}
+inline fun <reified T : Trait> impl(inst: String, @Suppress("UNUSED_PARAMETER") t: T) = "IMPL($inst, ${T::class.companionOwnerName})"
 
 enum class Implcontext {
     /** declaring a pure method */
@@ -39,8 +36,20 @@ enum class Implcontext {
     impl
 }
 
+private val KCallable<*>.const: Boolean get() = this is KProperty<*> && this !is KMutableProperty<*>
+
+private fun String.cref(m: KCallable<*>) = this + when (m) {
+    is KProperty<*> -> {
+        when (m) {
+            !is KMutableProperty<*> -> " const"
+            else -> ""
+        } + "&"
+    }
+    else -> ""
+}
+
 fun impl(m: KCallable<*>, ctx: Implcontext = Implcontext.impl, f: (() -> String)? = null): String {
-    val ret = m.returnType.conv() + if (m is KProperty<*>) "&" else ""
+    val ret = m.returnType.conv().cref(m)
     val params = m.parameters.filter { it.kind == KParameter.Kind.VALUE }.map { it.name!! to it.type.conv() }.let {
         when (ctx) {
             Implcontext.pure -> it
@@ -53,7 +62,11 @@ fun impl(m: KCallable<*>, ctx: Implcontext = Implcontext.impl, f: (() -> String)
         Implcontext.trait -> "static "
         Implcontext.impl -> "static "
     }
-    return prefix + "$ret ${m.name}($params)$def"
+    val qualifiers = when {
+        ctx == Implcontext.pure && m.const -> " const"
+        else -> ""
+    }
+    return prefix + "$ret ${m.name}($params)$qualifiers$def"
 }
 
 private fun traitImpls(traitsClasses: Collection<KClass<*>>): Map<String, Map<KCallable<*>, String?>> {
@@ -89,22 +102,33 @@ fun defvirt(classes: Collection<KClass<*>>): List<String> {
 /**
  * bind base to trait
  */
-fun defglue(classes: Collection<KClass<*>>, virtual: Boolean = true) =
-        traitImpls(classes).flatMap {
-            val T = it.key
-            it.value.toList().map { T to it.first }
-        }.map {
-            val T = it.first
-            val m = it.second
-            delegate(m, T, virtual)
-        }
+fun defglue(classes: Collection<KClass<*>>, virtual: Boolean = true): List<String> {
+    return traitImpls(classes).flatMap {
+        val T = it.key
+        it.value.toList().map { T to it.first }
+    }.map {
+        val T = it.first
+        val m = it.second
+        delegate(m, T, virtual)
+    }
+}
 
-private fun delegate(m: KCallable<*>, trait: String, virtual: Boolean): String {
+fun delegate(m: KCallable<*>, trait: String, virtual: Boolean): String {
     val params = m.parameters.filter { it.kind == KParameter.Kind.VALUE }
-    val ret = m.returnType.conv() + if (m is KProperty<*>) "&" else ""
+    val ret = m.returnType.conv().cref(m)
     val method = m.name
     val args = params.joinToString { "${it.type.conv()} ${it.name!!}" }
     val pass = (if (params.isNotEmpty()) ", " else "") + params.joinToString { it.name!! }
-    val prefix = (if (virtual) "virtual " else "")
-    return prefix + "$ret $method($args) { return ${trait}_traits<Self>::$method(*static_cast<Self*>(this)$pass); }"
+    val self = when {
+        m.const -> "const_cast<Self*>(static_cast<Self const*>(this))"
+        else -> "static_cast<Self*>(this)"
+    }
+    val qualifiers = when {
+        m.const -> " const"
+        else -> ""
+    } + when {
+        virtual -> " override"
+        else -> ""
+    }
+    return "$ret $method($args)$qualifiers { return ${trait}_traits<Self>::$method(*$self$pass); }"
 }
