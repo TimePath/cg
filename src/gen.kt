@@ -38,7 +38,7 @@ object companiontraits {
         companion object : Trait() {
             override fun implement(node: KClass<*>, name: String) {
                 println("${impl(name, Named)} {")
-                println("    " + impl(Named::name) { "static string it = \"${node.simpleName!!}\"; return it;" })
+                println("    " + impl(Named::name) { " static string it = \"${node.simpleName!!}\"; return it; " })
                 println("};")
             }
         }
@@ -57,11 +57,7 @@ object companiontraits {
                 parents?.let {
                     println("""
 ${impl(name, ParentConstraint)} {
-    ${impl(ParentConstraint::canAdd) {
-                        "return ${it
-                                .map { val T = it.simpleName; "IS_INSTANCE(parent, $T)" }
-                                .joinToString("\n               || ")};"
-                    }}
+    ${impl(ParentConstraint::canAdd) { " return ${it.map { val T = it.simpleName; "IS_INSTANCE(parent, $T)" }.joinToString(" || ")}; " }}
 };
 """)
                 }
@@ -85,7 +81,7 @@ object nodetraits {
         companion object : Trait() {
             override fun implement(node: KClass<*>, name: String) {
                 println("${impl(name, CompanionObject)} {")
-                println("    " + impl(CompanionObject::companion) { "return g_${name}_companion();" })
+                println("    " + impl(CompanionObject::companion) { " return g_${name}_companion(); " })
                 println("};")
             }
         }
@@ -110,9 +106,7 @@ using container = std::vector<std::unique_ptr<T>>;
 #include <typeinfo>
 #define IS_INSTANCE(var, T) instanceof<T>(var)
 template <class T, class Self>
-bool instanceof(Self &it) {
-    return typeid(it) == typeid(T);
-}
+bool instanceof(Self &it) { return typeid(it) == typeid(T); }
 """)
     println("""
 struct cell {
@@ -180,7 +174,7 @@ template <class Self> struct ${node_t}_fromtraits : $node_t {
                 _1_n::class.java -> "$node_t::_1_n" // +
                 else -> throw IllegalArgumentException()
             }
-            println("\t$sigil ${it.name};")
+            println("    $sigil ${it.name};")
         }
         println("    ${dtorDecl(klass)};")
         println("};")
@@ -192,10 +186,7 @@ struct $comp : ${companion_t}_fromtraits<$comp> {
     ${dtorDecl(comp)};
 };
 ${dtorDef(comp)}
-$companion_t &g_$comp() {
-    static $comp it;
-    return it;
-}
+$companion_t &g_$comp() { static $comp it; return it; }
 """)
     }
 
